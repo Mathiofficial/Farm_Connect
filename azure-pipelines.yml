@@ -6,15 +6,15 @@ pool:
 
 stages:
 
-# ==========================
-# STAGE 1 - BUILD AND TEST
-# ==========================
+# =========================
+# STAGE 1 - BUILD
+# =========================
 - stage: Build
-  displayName: 'Build and Test'
-  jobs:
+  displayName: 'Build'
 
-  - job: BuildAndTest
-    displayName: 'Build React Application'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build Vite React Application'
 
     steps:
 
@@ -25,36 +25,54 @@ stages:
 
     - script: |
         npm install
-      displayName: 'Install dependencies'
-
-    - script: |
-        npm test
-      displayName: 'Run automated tests'
-
-    - script: |
         npm run build
-      displayName: 'Build Vite React application'
+      displayName: 'Build React Application'
 
-    # Save the dist folder as an artifact
     - task: PublishPipelineArtifact@1
       inputs:
         targetPath: '$(Build.SourcesDirectory)/dist'
         artifact: 'react-build'
-      displayName: 'Publish React build artifact'
+      displayName: 'Publish Build Artifact'
 
 
-# ==========================
-# STAGE 2 - DEPLOY
-# ==========================
-- stage: Deploy
-  displayName: 'Deploy to Azure VM'
+# =========================
+# STAGE 2 - TEST
+# =========================
+- stage: Test
+  displayName: 'Test'
+
   dependsOn: Build
   condition: succeeded()
 
   jobs:
+  - job: TestJob
+    displayName: 'Run Automated Tests'
 
-  - job: DeployToVM
-    displayName: 'Deploy to Nginx'
+    steps:
+
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+      displayName: 'Install Node.js'
+
+    - script: |
+        npm install
+        npm test
+      displayName: 'Run Automated Tests'
+
+
+# =========================
+# STAGE 3 - DEPLOY
+# =========================
+- stage: Deploy
+  displayName: 'Deploy'
+
+  dependsOn: Test
+  condition: succeeded()
+
+  jobs:
+  - job: DeployJob
+    displayName: 'Deploy to Azure VM'
 
     steps:
 
@@ -62,7 +80,7 @@ stages:
       inputs:
         artifact: 'react-build'
         path: '$(Pipeline.Workspace)/react-build'
-      displayName: 'Download React build'
+      displayName: 'Download Build Artifact'
 
     - task: CopyFilesOverSSH@0
       inputs:
@@ -71,7 +89,7 @@ stages:
         contents: '**'
         targetFolder: '/tmp/agriwise-dist'
         overwrite: true
-      displayName: 'Copy build to Azure VM'
+      displayName: 'Copy Build to Azure VM'
 
     - task: SSH@0
       inputs:
