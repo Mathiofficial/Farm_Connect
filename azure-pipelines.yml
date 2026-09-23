@@ -1,0 +1,36 @@
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+
+- task: NodeTool@0
+  inputs:
+    versionSpec: '20.x'
+  displayName: 'Install Node.js'
+
+- script: |
+    npm install
+    npm run build
+  displayName: 'Build Vite React application'
+
+- task: CopyFilesOverSSH@0
+  inputs:
+    sshEndpoint: 'AzureVM'
+    sourceFolder: '$(Build.SourcesDirectory)/dist'
+    contents: '**'
+    targetFolder: '/tmp/agriwise-dist'
+    overwrite: true
+  displayName: 'Copy React build to Azure VM'
+
+- task: SSH@0
+  inputs:
+    sshEndpoint: 'AzureVM'
+    runOptions: 'inline'
+    inline: |
+      sudo rm -rf /var/www/html/*
+      sudo cp -r /tmp/agriwise-dist/* /var/www/html/
+      sudo systemctl restart nginx
+  displayName: 'Deploy React application to Nginx'
