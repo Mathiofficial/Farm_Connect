@@ -4,40 +4,81 @@ trigger:
 pool:
   vmImage: ubuntu-latest
 
-steps:
+stages:
 
-- task: NodeTool@0
-  inputs:
-    versionSpec: '20.x'
-  displayName: 'Install Node.js'
+# ==========================
+# STAGE 1 - BUILD AND TEST
+# ==========================
+- stage: Build
+  displayName: 'Build and Test'
+  jobs:
 
-- script: |
-    npm install
-  displayName: 'Install dependencies'
+  - job: BuildAndTest
+    displayName: 'Build React Application'
 
-- script: |
-    npm test
-  displayName: 'Run automated tests'
+    steps:
 
-- script: |
-    npm run build
-  displayName: 'Build Vite React application'
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+      displayName: 'Install Node.js'
 
-- task: CopyFilesOverSSH@0
-  inputs:
-    sshEndpoint: 'AzureVM'
-    sourceFolder: '$(Build.SourcesDirectory)/dist'
-    contents: '**'
-    targetFolder: '/tmp/agriwise-dist'
-    overwrite: true
-  displayName: 'Copy React build to Azure VM'
+    - script: |
+        npm install
+      displayName: 'Install dependencies'
 
-- task: SSH@0
-  inputs:
-    sshEndpoint: 'AzureVM'
-    runOptions: 'inline'
-    inline: |
-      sudo rm -rf /var/www/html/*
-      sudo cp -r /tmp/agriwise-dist/* /var/www/html/
-      sudo systemctl restart nginx
-  displayName: 'Deploy React application to Nginx'
+    - script: |
+        npm test
+      displayName: 'Run automated tests'
+
+    - script: |
+        npm run build
+      displayName: 'Build Vite React application'
+
+    # Save the dist folder as an artifact
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: '$(Build.SourcesDirectory)/dist'
+        artifact: 'react-build'
+      displayName: 'Publish React build artifact'
+
+
+# ==========================
+# STAGE 2 - DEPLOY
+# ==========================
+- stage: Deploy
+  displayName: 'Deploy to Azure VM'
+  dependsOn: Build
+  condition: succeeded()
+
+  jobs:
+
+  - job: DeployToVM
+    displayName: 'Deploy to Nginx'
+
+    steps:
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'react-build'
+        path: '$(Pipeline.Workspace)/react-build'
+      displayName: 'Download React build'
+
+    - task: CopyFilesOverSSH@0
+      inputs:
+        sshEndpoint: 'AzureVM'
+        sourceFolder: '$(Pipeline.Workspace)/react-build'
+        contents: '**'
+        targetFolder: '/tmp/agriwise-dist'
+        overwrite: true
+      displayName: 'Copy build to Azure VM'
+
+    - task: SSH@0
+      inputs:
+        sshEndpoint: 'AzureVM'
+        runOptions: 'inline'
+        inline: |
+          sudo rm -rf /var/www/html/*
+          sudo cp -r /tmp/agriwise-dist/* /var/www/html/
+          sudo systemctl restart nginx
+      displayName: 'Deploy to Nginx'
